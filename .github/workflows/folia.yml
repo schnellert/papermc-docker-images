@@ -21,7 +21,7 @@ permissions:
 jobs:
   synchronize:
     secrets: inherit
-    uses: ./.github/workflows/synchronize.yml
+    uses: $/.github/workflows/synchronize.yml
     with:
       force: ${{ inputs.force || false }}
       project: folia
