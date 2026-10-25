@@ -10,14 +10,14 @@
   "packageRules": [
     {
       "matchManagers": ["dockerfile"],
-      "matchFileNames": [
-        "folia/**",
-        "paper/**",
-        "velocity/**"
-      ],
       "matchPackageNames": ["eclipse-temurin"],
       "matchUpdateTypes": ["major"],
       "enabled": false
+    },
+    {
+      "matchManagers": ["dockerfile"],
+      "matchPackageNames": ["eclipse-temurin"],
+      "pinDigests": true
     }
   ],
   "timezone": "Europe/Berlin"
