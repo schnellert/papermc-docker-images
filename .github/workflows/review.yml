@@ -77,4 +77,4 @@ jobs:
           cache: true
 
       - name: Lint files
-        run: prettier --check --ignore-unknown .
+        run: pnpm exec prettier --check --ignore-unknown .
