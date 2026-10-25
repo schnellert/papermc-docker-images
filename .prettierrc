@@ -1,11 +1,11 @@
 {
-   "plugins": ["prettier-plugin-sh"],
-   "overrides": [
-      {
-         "files": ["**/Dockerfile*"],
-         "options": {
-            "parser": "dockerfile"
-         }
+  "plugins": ["prettier-plugin-sh"],
+  "overrides": [
+    {
+      "files": ["**/Dockerfile*"],
+      "options": {
+        "parser": "dockerfile"
       }
-   ]
+    }
+  ]
 }

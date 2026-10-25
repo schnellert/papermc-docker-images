@@ -6,10 +6,10 @@
 
 ## 🏷️ Tags
 
-- `<version>`           - latest build for that version, e.g. `4.1.0-SNAPSHOT`
+- `<version>` - latest build for that version, e.g. `4.1.0-SNAPSHOT`
 - `<version>-build.<n>` - a specific, immutable build, e.g. `4.1.0-SNAPSHOT-build.21`
 
-Pin `<version>-build.<n>` for reproducible deployments; use `<version>` to follow the newest build in that version. 
+Pin `<version>-build.<n>` for reproducible deployments; use `<version>` to follow the newest build in that version.
 
 ## Platforms
 
@@ -18,13 +18,14 @@ Pin `<version>-build.<n>` for reproducible deployments; use `<version>` to follo
 
 ## ⚙️ Configuration
 
-| Variable            | Description                                                   | Default           |
-|---------------------|---------------------------------------------------------------|-------------------|
-| `JAVA_TOOL_OPTIONS` | JVM options.                                                  | `-Xms512M -Xmx1G` |
+| Variable            | Description  | Default           |
+| ------------------- | ------------ | ----------------- |
+| `JAVA_TOOL_OPTIONS` | JVM options. | `-Xms512M -Xmx1G` |
 
 Persistent data lives in `/data`. The container runs on a non-root user (**UID 1000**), so the mounted host directory must be writable by that user.
 
 For example:
+
 ```bash
 mkdir -p /data/velocity-1
 chown -R 1000:1000 /data/velocity-1
@@ -34,12 +35,12 @@ chown -R 1000:1000 /data/velocity-1
 
 Paper can be deployed using different container orchestration platforms. The examples below focus on:
 
-* [Docker](#docker)
-* [Docker Compose](#docker-compose)
+- [Docker](#docker)
+- [Docker Compose](#docker-compose)
 
 > [!NOTE]
 > These images are regular JRE-based container images, not distroless images. This keeps them flexible for custom runtime requirements, such as overriding the Docker entrypoint to run initialization scripts, modify configuration files, or perform other startup tasks before Paper is launched.
-> 
+>
 > The same approach can also be used with orchestration platforms such as **Docker Swarm** or **Kubernetes**.
 
 ## Docker
@@ -48,10 +49,10 @@ Paper can be deployed using different container orchestration platforms. The exa
 
 ```bash
 docker run -dit \
-   --name velocity-1 \
-   -p 25565:25565 \
-   -v /data/velocity-1:/data \
-   schnellert/velocity:4.1.0-SNAPSHOT
+  --name velocity-1 \
+  -p 25565:25565 \
+  -v /data/velocity-1:/data \
+  schnellert/velocity:4.1.0-SNAPSHOT
 ```
 
 ### b.) Options
@@ -63,16 +64,19 @@ docker run -dit \
 ### c.) Manage the instance
 
 Attach to the console:
+
 ```bash
 docker attach velocity-1
 ```
 
 Detach from the console without stopping the container:
+
 ```text
 Ctrl+P, Ctrl+Q
 ```
 
 View the logs:
+
 ```bash
 docker logs -f velocity-1
 ```
@@ -97,27 +101,31 @@ services:
 
 `stdin_open` and `tty` correspond to Docker's interactive and TTY options:
 
-- `stdin_open: true`  - keeps **STDIN** open.
-- `tty: true`         - allocates a **pseudo-TTY**.
+- `stdin_open: true` - keeps **STDIN** open.
+- `tty: true` - allocates a **pseudo-TTY**.
 
 ### c.) Manage the instance
 
 Start the instance:
+
 ```bash
 docker compose up -d
 ```
 
 Attach to the console:
+
 ```bash
 docker compose attach velocity-1
 ```
 
 Detach from the console without stopping the container:
+
 ```text
 Ctrl+P, Ctrl+Q
 ```
 
 View the logs:
+
 ```bash
 docker compose -f velocity-1
 ```
