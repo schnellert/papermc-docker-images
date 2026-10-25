@@ -8,8 +8,9 @@ RUN mkdir -p /app /data \
 WORKDIR /data
 
 # Defines the Paper download URL and sha256 checksum
-ARG DOWNLOAD_URL
-ARG SHA256_CHECKSUM
+# Defaults are for testing only and must be overridden for releases
+ARG DOWNLOAD_URL="https://fill-data.papermc.io/v1/objects/f8e684a4fef2a8b46d03aac049b49d59275e9ce5367dba7c6075cb5780f38470/paper-26.3-223.jar"
+ARG SHA256_CHECKSUM="sha256:f8e684a4fef2a8b46d03aac049b49d59275e9ce5367dba7c6075cb5780f38470"
 
 # Downloads the Paper JAR and verifies its checksum
 ADD \

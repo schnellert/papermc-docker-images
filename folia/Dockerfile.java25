@@ -8,8 +8,9 @@ RUN mkdir -p /app /data \
 WORKDIR /data
 
 # Defines the Folia download URL and sha256 checksum
-ARG DOWNLOAD_URL
-ARG SHA256_CHECKSUM
+# Defaults are for testing only and must be overridden for releases
+ARG DOWNLOAD_URL="https://fill-data.papermc.io/v1/objects/607afd1c3320008e1ffd2eaee6780ace4419d5f8c527b75e79f259be79ebf57b/folia-26.1.2-8.jar"
+ARG SHA256_CHECKSUM="sha256:607afd1c3320008e1ffd2eaee6780ace4419d5f8c527b75e79f259be79ebf57b"
 
 # Downloads the Folia JAR and verifies its checksum
 ADD \

@@ -8,8 +8,9 @@ RUN mkdir -p /app /data \
 WORKDIR /data
 
 # Defines the Velocity download URL and sha256 checksum
-ARG DOWNLOAD_URL
-ARG SHA256_CHECKSUM
+# Defaults are for testing only and must be overridden for releases
+ARG DOWNLOAD_URL="https://fill-data.papermc.io/v1/objects/85be73b90f295acd8d5d45a00ad10bac791d4b72b7554172612a89565ebaaa8f/velocity-4.3.0-44.jar"
+ARG SHA256_CHECKSUM="sha256:85be73b90f295acd8d5d45a00ad10bac791d4b72b7554172612a89565ebaaa8f"
 
 # Downloads the Velocity JAR and verifies its checksum
 ADD \
