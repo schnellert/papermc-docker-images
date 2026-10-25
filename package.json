@@ -14,5 +14,28 @@
       "name": "node",
       "version": "24.22.1"
     }
+  },
+  "prettier": {
+    "plugins": [
+      "prettier-plugin-sh"
+    ],
+    "overrides": [
+      {
+        "files": [
+          "**/Dockerfile*"
+        ],
+        "options": {
+          "parser": "dockerfile"
+        }
+      },
+      {
+        "files": [
+          "pnpm-lock.yaml"
+        ],
+        "options": {
+          "requirePragma": true
+        }
+      }
+    ]
   }
 }
