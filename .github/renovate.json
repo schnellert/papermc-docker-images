@@ -3,11 +3,19 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended"],
   "enabledManagers": [
-     "devcontainer",
-     "dockerfile",
-     "github-actions"
+    "devcontainer",
+    "dockerfile",
+    "github-actions"
    ],
   "packageRules": [
+    {
+      "matchManagers": ["devcontainer"],
+      "addLabels": ["devcontainer"]
+    },
+    {
+      "matchManagers": ["dockerfile"],
+      "addLabels": ["docker"]
+    },
     {
       "matchManagers": ["dockerfile"],
       "matchPackageNames": ["eclipse-temurin"],
@@ -18,6 +26,10 @@
       "matchManagers": ["dockerfile"],
       "matchPackageNames": ["eclipse-temurin"],
       "pinDigests": true
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "addLabels": ["github-actions"]
     }
   ],
   "timezone": "Europe/Berlin"
