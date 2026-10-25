@@ -32,7 +32,7 @@ jobs:
           list-files: json
 
   build:
-    name: Build ${{ matrix.dockerfile }}
+    name: Build Docker image
     runs-on: ubuntu-latest
 
     permissions:
@@ -57,3 +57,24 @@ jobs:
         with:
           file: ${{ matrix.dockerfile }}
           push: 'false'
+
+  lint:
+    name: Lint files
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js and pnpm
+        uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e # v3.1.2
+        with:
+          cache: true
+
+      - name: Lint files
+        run: prettier --check --ignore-unknown .
