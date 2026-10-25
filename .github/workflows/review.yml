@@ -1,0 +1,59 @@
+
+name: Review
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+      - synchronize
+
+jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+
+    permissions:
+      pull-requests: read
+
+    outputs:
+      dockerfiles: ${{ steps.detect-changes.outputs.dockerfiles_files }}
+
+    steps:
+      - name: Detect Changes
+        id: detect-changes
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: |
+            dockerfiles:
+              - added|modified: '{folia,paper,velocity}/Dockerfile*'
+          list-files: json
+
+  build:
+    name: Build ${{ matrix.dockerfile }}
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    needs: changes
+    if: ${{ needs.changes.outputs.dockerfiles != '[]' }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        dockerfile: ${{ fromJSON(needs.changes.outputs.dockerfiles) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build Docker image
+        uses: skriptfabrik/github-actions/build-docker-image@main
+        with:
+          file: ${{ matrix.dockerfile }}
+          push: 'false'
