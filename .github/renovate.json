@@ -11,9 +11,9 @@
     {
       "matchManagers": ["dockerfile"],
       "matchFileNames": [
-        "/folia/**",
-        "/paper/**",
-        "/velocity/**"
+        "folia/**",
+        "paper/**",
+        "velocity/**"
       ],
       "matchPackageNames": ["eclipse-temurin"],
       "matchUpdateTypes": ["major"],
