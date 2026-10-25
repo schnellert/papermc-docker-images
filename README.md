@@ -35,7 +35,7 @@ The recommended development environment is the included [devcontainer.json](.dev
 
 ### Commit Messages
 
-Please open a related issue and reference it in your commit message using `.. (#issue-number)`. 
+Please open a related issue and reference it in your commit message using `.. (#issue-number)`.
 
 ## 📝 License
 

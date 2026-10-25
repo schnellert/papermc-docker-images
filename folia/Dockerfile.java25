@@ -2,7 +2,7 @@ FROM eclipse-temurin:25-jre-jammy@sha256:e0d8c47eccd7ec82d635542dfcd1f2b1293add6
 
 # Prepares the directories
 RUN mkdir -p /app /data \
-   && chown 1000:1000 /app /data
+  && chown 1000:1000 /app /data
 
 # Sets the Folia working data directory
 WORKDIR /data
@@ -13,18 +13,14 @@ ARG DOWNLOAD_URL="https://fill-data.papermc.io/v1/objects/607afd1c3320008e1ffd2e
 ARG SHA256_CHECKSUM="sha256:607afd1c3320008e1ffd2eaee6780ace4419d5f8c527b75e79f259be79ebf57b"
 
 # Downloads the Folia JAR and verifies its checksum
-ADD \
-   --checksum=${SHA256_CHECKSUM} \
-   --chown=1000:1000 \
-   ${DOWNLOAD_URL} \
-   /app/folia.jar
+ADD --checksum=${SHA256_CHECKSUM} --chown=1000:1000 ${DOWNLOAD_URL} /app/folia.jar
 
 # Runs Folia as an unprivileged user
 USER 1000:1000
 
-# Requires explicit EULA acceptance and sets the default JVM options 
+# Requires explicit EULA acceptance and sets the default JVM options
 ENV ACCEPT_EULA=false \
-    JAVA_TOOL_OPTIONS="-Xms2G -Xmx2G"
+  JAVA_TOOL_OPTIONS="-Xms2G -Xmx2G"
 
 # Stops Folia gracefully so the data is saved before exit
 STOPSIGNAL SIGTERM
@@ -34,7 +30,7 @@ EXPOSE 25565
 
 # Periodically checks whether Folia is accepting connections
 HEALTHCHECK --interval=30s --start-period=60s --timeout=5s \
-   CMD bash -c 'echo > /dev/tcp/127.0.0.1/25565'
+  CMD bash -c 'echo > /dev/tcp/127.0.0.1/25565'
 
 # Writes eula.txt from ACCEPT_EULA then starts the Folia instance
 CMD ["bash", "-c", "echo \"eula=${ACCEPT_EULA:-false}\" > /data/eula.txt && exec java -jar /app/folia.jar nogui"]

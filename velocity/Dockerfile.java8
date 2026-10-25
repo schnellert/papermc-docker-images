@@ -2,7 +2,7 @@ FROM eclipse-temurin:8-jre-jammy@sha256:49b31e882495abeb1118de417ee696bdc929d2de
 
 # Prepares the directories
 RUN mkdir -p /app /data \
-   && chown 1000:1000 /app /data
+  && chown 1000:1000 /app /data
 
 # Sets the Velocity working data directory
 WORKDIR /data
@@ -13,11 +13,7 @@ ARG DOWNLOAD_URL="https://fill-data.papermc.io/v1/objects/d6ba2c934eb956b3aea538
 ARG SHA256_CHECKSUM="sha256:d6ba2c934eb956b3aea5381135fb6c5763bb3a50a85022671fac6f5bfed63843"
 
 # Downloads the Velocity JAR and verifies its checksum
-ADD \
-   --checksum=${SHA256_CHECKSUM} \
-   --chown=1000:1000 \
-   ${DOWNLOAD_URL} \
-   /app/velocity.jar
+ADD --checksum=${SHA256_CHECKSUM} --chown=1000:1000 ${DOWNLOAD_URL} /app/velocity.jar
 
 # Runs Velocity as an unprivileged user
 USER 1000:1000
@@ -33,7 +29,7 @@ EXPOSE 25565
 
 # Periodically checks whether Velocity is accepting connections
 HEALTHCHECK --interval=30s --start-period=60s --timeout=5s \
-   CMD bash -c 'echo > /dev/tcp/127.0.0.1/25565'
+  CMD bash -c 'echo > /dev/tcp/127.0.0.1/25565'
 
 # Starts the Velocity instance
 CMD ["java", "-jar", "/app/velocity.jar"]
