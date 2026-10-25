@@ -30,6 +30,7 @@
       },
       {
         "files": [
+          "mise.lock",
           "pnpm-lock.yaml"
         ],
         "options": {
