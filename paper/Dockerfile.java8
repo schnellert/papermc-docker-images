@@ -1,4 +1,4 @@
-FROM eclipse-temurin:8-jre-jammy@sha256:49b31e882495abeb1118de417ee696bdc929d2de238730920f1468025fc393a4
+FROM eclipse-temurin:8-jre-jammy@sha256:48a8129eda9d0c8a81c86d1837c125b63a5ee8558ba9565b6066516ae72a8d47
 
 # Prepares the directories
 RUN mkdir -p /app /data \
