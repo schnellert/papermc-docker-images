@@ -6,9 +6,11 @@ Lightweight and ready for Docker, Docker Compose, Docker Swarm, Kubernetes and a
 
 ## 📦 Available Images
 
-- Folia — [Docker Hub](https://hub.docker.com/r/schnellert/folia) · [GHCR](https://github.com/schnellert/papermc-docker-images/pkgs/container/folia)
-- Paper — [Docker Hub](https://hub.docker.com/r/schnellert/paper) · [GHCR](https://github.com/schnellert/papermc-docker-images/pkgs/container/paper)
-- Velocity — [Docker Hub](https://hub.docker.com/r/schnellert/velocity) · [GHCR](https://github.com/schnellert/papermc-docker-images/pkgs/container/velocity)
+| Image    | Registry                                                                                                                                                |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Folia    | [![Docker Pulls](https://img.shields.io/docker/pulls/schnellert/folia?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/schnellert/folia)       |
+| Paper    | [![Docker Pulls](https://img.shields.io/docker/pulls/schnellert/paper?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/schnellert/paper)       |
+| Velocity | [![Docker Pulls](https://img.shields.io/docker/pulls/schnellert/velocity?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/schnellert/velocity) |
 
 ## 📖 Documentation
 

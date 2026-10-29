@@ -1,6 +1,6 @@
 # Folia
 
-[![Synchronize Folia](https://github.com/schnellert/papermc-docker/actions/workflows/folia.yml/badge.svg)](https://github.com/schnellert/papermc-docker/actions/workflows/folia.yml)
+[![Synchronize Folia](https://github.com/schnellert/papermc-docker/actions/workflows/synchronize-folia.yml/badge.svg)](https://github.com/schnellert/papermc-docker/actions/workflows/synchronize-folia.yml)
 
 > Docker images for [Folia](https://papermc.io/software/folia), built from the official releases provided by the [PaperMC Fill API](https://fill.papermc.io/swagger-ui/index.html#).
 
