@@ -1,27 +1,22 @@
 name: Synchronize Paper
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - "paper/Dockerfile*"
   schedule:
     - cron: "0 0 * * *"
   workflow_dispatch:
-    inputs:
-      force:
-        default: false
-        description: Force build all Paper images
-        type: boolean
 
 concurrency:
   cancel-in-progress: true
   group: ${{ github.workflow }}-${{ github.ref }}
-
-permissions:
-  contents: read
-  packages: write
 
 jobs:
   synchronize:
     secrets: inherit
     uses: $/.github/workflows/synchronize.yml
     with:
-      force: ${{ inputs.force || false }}
       project: paper

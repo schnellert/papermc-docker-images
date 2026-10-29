@@ -1,6 +1,6 @@
 # Velocity
 
-[![Synchronize Velocity](https://github.com/schnellert/papermc-docker/actions/workflows/velocity.yml/badge.svg)](https://github.com/schnellert/papermc-docker/actions/workflows/velocity.yml)
+[![Synchronize Velocity](https://github.com/schnellert/papermc-docker/actions/workflows/synchronize-velocity.yml/badge.svg)](https://github.com/schnellert/papermc-docker/actions/workflows/synchronize-velocity.yml)
 
 > Docker images for [Velocity](https://papermc.io/software/velocity), built from the official releases provided by the [PaperMC Fill API](https://fill.papermc.io/swagger-ui/index.html#).
 

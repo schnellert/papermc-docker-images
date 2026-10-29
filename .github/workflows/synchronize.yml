@@ -3,17 +3,17 @@ name: Synchronize
 on:
   workflow_call:
     inputs:
-      force:
-        required: true
-        type: boolean
       project:
         required: true
         type: string
 
+permissions:
+  contents: read
+
 jobs:
   detect-changes:
     name: Detect Changes
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     outputs:
       any: ${{ steps.detect-changes.outputs.any }}
@@ -25,7 +25,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Login to Docker Hub
+      - name: Authenticate with Docker Hub
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           username: schnellert
@@ -35,126 +35,160 @@ jobs:
         id: detect-changes
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
-          FORCE: ${{ inputs.force }}
           PROJECT: ${{ inputs.project }}
         with:
           script: |
-            const fs        = require('fs');
+            const crypto = require('node:crypto');
+            const fs = require('node:fs');
 
-            const force     = process.env.FORCE === 'true';
-            const project   = process.env.PROJECT;
+            const project = process.env.PROJECT;
+            const baseUrl = `https://fill.papermc.io/v3/projects/${project}`;
+            const repository = `docker.io/schnellert/${project}`;
+            const platforms = ['linux/amd64', 'linux/arm64'];
 
-            const FILL_API_BASE_URL  = 'https://fill.papermc.io/v3';
-            const namespace = 'schnellert';
+            const fetchJson = async (url) => {
+              const response = await fetch(url, {
+                headers: {
+                  'User-Agent': 'github.com/schnellert/papermc-docker-images',
+                },
+              });
 
-            const fetchJson = async (url, label) => {
-              const res = await fetch(url);
-              if (!res.ok) {
-                throw new Error(`Failed to fetch ${label}: ${res.status} ${res.statusText}`);
+              if (!response.ok) {
+                throw new Error(`${url}: HTTP ${response.status}`);
               }
-              return res.json();
+
+              return response.json();
             };
 
-            const pickStableBuild = builds =>
-              builds.find(b => b.channel === 'STABLE' || b.channel === 'RECOMMENDED');
+            const getHash = (file) => crypto
+              .createHash('sha256')
+              .update(fs.readFileSync(file))
+              .digest('hex');
 
-            const { versions: versionsByFamily } =
-              await fetchJson(`${FILL_API_BASE_URL}/projects/${project}`, project);
-
-            const missing = [];
-
-            for (const [family, candidates] of Object.entries(versionsByFamily)) {
-              let version;
-              let build;
-              let latest;
-
-              // Families are newest-first; take the first candidate that has a stable build.
-              for (const candidate of candidates) {
-                const builds = await fetchJson(
-                  `${FILL_API_BASE_URL}/projects/${project}/versions/${candidate}/builds`,
-                  `${project} ${candidate} builds`,
-                );
-
-                latest ??= { candidate, build: builds[0] };
-
-                build = pickStableBuild(builds);
-
-                if (build) {
-                  version = candidate;
-                  break;
-                }
-              }
-
-              // No stable build anywhere (e.g. a fresh version still tagged unstable) — use the newest build.
-              if (!build && latest?.build) {
-                ({ candidate: version, build } = latest);
-              }
-
-              if (!build) {
-                continue;
-              }
-
-              const tag       = `${version}-build.${build.id}`;
-              const reference = `docker.io/${namespace}/${project}:${tag}`;
-
-              if (!force) {
-                const { exitCode } = await exec.getExecOutput(
-                  'docker', ['buildx', 'imagetools', 'inspect', reference],
-                  { ignoreReturnCode: true, silent: true },
-                );
-                if (exitCode === 0) {
-                  continue;
-                }
-              }
-
-              const asset = build.downloads['server:default'];
-              if (!asset?.url) {
-                throw new Error(`No download URL for ${project} ${version} build ${build.id}`);
-              }
-              if (!asset.checksums?.sha256) {
-                throw new Error(`No SHA256 for ${project} ${version} build ${build.id}`);
-              }
-
-              const { version: { java } } = await fetchJson(
-                `${FILL_API_BASE_URL}/projects/${project}/versions/${version}`,
-                `${project} ${version}`,
+            const runInspect = async (reference, args = []) => {
+              const result = await exec.getExecOutput(
+                'docker',
+                ['buildx', 'imagetools', 'inspect', reference, ...args],
+                { ignoreReturnCode: true, silent: true },
               );
 
-              const dockerfile = `${project}/Dockerfile.java${java.version.minimum}`;
-              if (!fs.existsSync(dockerfile)) {
-                core.info(`No ${dockerfile} found (${tag}) — skipping`);
-                continue;
+              if (result.exitCode === 0) {
+                return JSON.parse(result.stdout);
               }
 
-              missing.push({
-                download: asset.url,
-                sha256:   `sha256:${asset.checksums.sha256}`,
-                java:     java.version.minimum,
-                tag,
-                version,
-              });
+              if (/manifest unknown|name unknown|not found|404 Not Found/i.test(result.stderr)) {
+                return null;
+              }
+
+              throw new Error(`Cannot inspect ${reference}: ${result.stderr}`);
+            };
+
+            const needsBuild = async (version, buildId, hash) => {
+              const reference = `${repository}:${version}`;
+              const manifest = await runInspect(reference, ['--raw']);
+
+              if (!manifest) return true;
+
+              // Read the image configuration on each target architecture.
+              for (const platform of platforms) {
+                const format = `{{json (index .Image "${platform}")}}`;
+                const image = await runInspect(reference, ['--format', format]);
+
+                if (!image) return true;
+
+                const labels = image.config?.Labels ?? {};
+                if (
+                  labels["BUILD_ID"] !== String(buildId) ||
+                  labels["HASH"] !== hash
+                ) {
+                  return true;
+                }
+              }
+
+              return false;
+            };
+
+            const pickStableBuild = (builds) => builds.find(
+              ({ channel }) => channel === 'STABLE' || channel === 'RECOMMENDED',
+            );
+
+            const { versions } = await fetchJson(baseUrl);
+            const missing = [];
+
+            for (const candidates of Object.values(versions)) {
+              const selected = [];
+              let fallback;
+
+              for (const version of candidates) {
+                const builds = await fetchJson(`${baseUrl}/versions/${version}/builds`);
+
+                if (!fallback && builds.length) {
+                  fallback = { version, build: builds[0] };
+                }
+
+                const build = pickStableBuild(builds);
+                if (build) selected.push({ version, build });
+              }
+
+              if (!selected.length && fallback) selected.push(fallback);
+
+              for (const { version, build } of selected) {
+                const { version: metadata } = await fetchJson(
+                  `${baseUrl}/versions/${version}`,
+                );
+
+                const java = metadata.java.version.minimum;
+                const dockerfile = `${project}/Dockerfile.java${java}`;
+
+                if (!fs.existsSync(dockerfile)) {
+                  core.info(`Skipping ${version}: ${dockerfile} not found`);
+                  continue;
+                }
+
+                const hash = getHash(dockerfile);
+                if (!(await needsBuild(version, build.id, hash))) {
+                  core.info(`${version}: up to date (build ${build.id})`);
+                  continue;
+                }
+
+                const asset = build.downloads?.['server:default'];
+                if (!asset?.url || !asset?.checksums?.sha256) {
+                  throw new Error(`Missing download URL or SHA256 for ${version} build ${build.id}`);
+                }
+
+                missing.push({
+                  version,
+                  buildId: String(build.id),
+                  java,
+                  hash,
+                  download: asset.url,
+                  sha256: `sha256:${asset.checksums.sha256}`,
+                });
+
+                core.info(`${version}: build required (upstream build ${build.id})`);
+              }
+            }
+
+            if (missing.length > 256) {
+              throw new Error(`Build matrix exceeds 256 entries: ${missing.length}`);
             }
 
             core.setOutput('matrix', JSON.stringify({ include: missing }));
-            core.setOutput('any',    String(missing.length > 0));
-
-            core.info(
-              missing.length > 0
-                ? `${missing.length} ${missing.length === 1 ? 'image needs' : 'images need'} building:\n${JSON.stringify(missing, null, 2)}`
-                : 'All images are up to date.',
-            );
+            core.setOutput('any', String(missing.length > 0));
+            core.info(missing.length
+              ? `${missing.length} images need building:\n${JSON.stringify(missing, null, 2)}`
+              : 'All images are up to date.');
 
   build-push:
-    name: Build & Push
-    runs-on: ubuntu-latest
-
+    name: Build & Push (${{ matrix.version }})
+    runs-on: ubuntu-26.04
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.any == 'true' }}
 
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.detect-changes.outputs.matrix) }}
       max-parallel: 3
+      matrix: ${{ fromJSON(needs.detect-changes.outputs.matrix) }}
 
     steps:
       - name: Checkout
@@ -162,43 +196,21 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Authenticate with GHCR
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
-        with:
-          registry: ghcr.io
-          username: schnellert
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Authenticate with Docker Hub
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
-        with:
-          username: schnellert
-          password: ${{ secrets.DOCKER_HUB_PAT }}
-
-      - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-
-      - name: Setup Docker QEMU
-        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
-
       - name: Build & Push
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        uses: skriptfabrik/github-actions/build-docker-image@b84cd74840d160c026425667cacefa3e1d483463 # main
         with:
           build-args: |
             DOWNLOAD_URL=${{ matrix.download }}
             SHA256_CHECKSUM=${{ matrix.sha256 }}
-          cache-from: |
-            type=gha,scope=${{ inputs.project }}-java${{ matrix.java }}
-          cache-to: |
-            type=gha,mode=max,scope=${{ inputs.project }}-java${{ matrix.java }}
           context: ${{ inputs.project }}
-          file: ${{ inputs.project }}/Dockerfile.java${{ matrix.java }}
-          platforms: |
-            linux/amd64
-            linux/arm64
-          push: true
+          file: Dockerfile.java${{ matrix.java }}
+          labels: |
+            BUILD_ID=${{ matrix.buildId }}
+            HASH=${{ matrix.hash }}
+          registry: docker.io
+          registry-username: schnellert
+          registry-password: ${{ secrets.DOCKER_HUB_PAT }}
+          repository: schnellert
+          name: ${{ inputs.project }}
           tags: |
-            ghcr.io/${{ github.repository }}/${{ inputs.project }}:${{ matrix.tag }}
-            ghcr.io/${{ github.repository }}/${{ inputs.project }}:${{ matrix.version }}
-            schnellert/${{ inputs.project }}:${{ matrix.tag }}
-            schnellert/${{ inputs.project }}:${{ matrix.version }}
+            type=raw,value=${{ matrix.version }}

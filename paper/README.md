@@ -1,6 +1,6 @@
 # Paper
 
-[![Synchronize Paper](https://github.com/schnellert/papermc-docker/actions/workflows/paper.yml/badge.svg)](https://github.com/schnellert/papermc-docker/actions/workflows/paper.yml)
+[![Synchronize Paper](https://github.com/schnellert/papermc-docker/actions/workflows/synchronize-paper.yml/badge.svg)](https://github.com/schnellert/papermc-docker/actions/workflows/synchronize-paper.yml)
 
 > Docker images for [Paper](https://papermc.io/software/paper), built from the official releases provided by the [PaperMC Fill API](https://fill.papermc.io/swagger-ui/index.html#).
 
