@@ -1,12 +1,8 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "automerge": true,
+  "enabledManagers": ["devcontainer", "dockerfile", "github-actions", "npm"],
   "extends": ["config:recommended"],
-  "enabledManagers": [
-    "devcontainer",
-    "dockerfile",
-    "github-actions",
-    "npm"
-  ],
   "packageRules": [
     {
       "matchManagers": ["devcontainer"],
