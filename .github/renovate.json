@@ -5,15 +5,8 @@
     "devcontainer",
     "dockerfile",
     "github-actions",
-    "mise",
     "npm"
   ],
-  "mise": {
-    "lockFileMaintenance": {
-      "enabled": true,
-      "schedule": ["at any time"]
-    }
-  },
   "packageRules": [
     {
       "matchManagers": ["devcontainer"],
@@ -37,10 +30,6 @@
     {
       "matchManagers": ["github-actions"],
       "addLabels": ["github-actions"]
-    },
-    {
-      "matchManagers": ["mise"],
-      "addLabels": ["mise"]
     },
     {
       "matchManagers": ["npm"],
