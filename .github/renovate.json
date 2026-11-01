@@ -28,6 +28,10 @@
       "addLabels": ["github-actions"]
     },
     {
+      "matchManagers": ["mise"],
+      "addLabels": ["mise"]
+    },
+    {
       "matchManagers": ["npm"],
       "minimumReleaseAge": "1 day",
       "addLabels": ["npm"]
