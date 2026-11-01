@@ -1,15 +1,16 @@
 # Velocity
 
 [![Synchronize Velocity](https://github.com/schnellert/papermc-docker/actions/workflows/synchronize-velocity.yml/badge.svg)](https://github.com/schnellert/papermc-docker/actions/workflows/synchronize-velocity.yml)
+[![Docker Pulls](https://img.shields.io/docker/pulls/schnellert/velocity?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/schnellert/velocity)
 
 > Docker images for [Velocity](https://papermc.io/software/velocity), built from the official releases provided by the [PaperMC Fill API](https://fill.papermc.io/swagger-ui/index.html#).
 
 ## 🏷️ Tags
 
 - `<version>` - latest build for that version, e.g. `4.1.0-SNAPSHOT`
-- `<version>-build.<n>` - a specific, immutable build, e.g. `4.1.0-SNAPSHOT-build.21`
+- `<version>@sha256:<checksum>` - a specific, immutable build, e.g. `4.1.0-SNAPSHOT@sha256:5452093b4b7343f7c91111b66a7ded55e0ac2ac04f48ca4d5771b33f08c9ab69`
 
-Pin `<version>-build.<n>` for reproducible deployments; use `<version>` to follow the newest build in that version.
+Pin `<version>@sha256:<checksum>` for reproducible deployments; use `<version>` to follow the newest build in that version.
 
 ## Platforms
 

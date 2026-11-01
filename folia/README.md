@@ -1,15 +1,16 @@
 # Folia
 
 [![Synchronize Folia](https://github.com/schnellert/papermc-docker/actions/workflows/synchronize-folia.yml/badge.svg)](https://github.com/schnellert/papermc-docker/actions/workflows/synchronize-folia.yml)
+[![Docker Pulls](https://img.shields.io/docker/pulls/schnellert/folia?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/schnellert/folia)
 
 > Docker images for [Folia](https://papermc.io/software/folia), built from the official releases provided by the [PaperMC Fill API](https://fill.papermc.io/swagger-ui/index.html#).
 
 ## 🏷️ Tags
 
 - `<version>` - latest build for that version, e.g. `1.21.11`
-- `<version>-build.<n>` - a specific, immutable build, e.g. `1.21.11-build.42`
+- `<version>@sha256:<checksum>` - a specific, immutable build, e.g. `1.21.11@sha256:582d56fa47f27564a9b4d93cdf604483bd669d68267562940dd53cb907bc5964`
 
-Pin `<version>-build.<n>` for reproducible deployments; use `<version>` to follow the newest build in that version.
+Pin `<version>@sha256:<checksum>` for reproducible deployments; use `<version>` to follow the newest build in that version.
 
 ## Platforms
 

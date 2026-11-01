@@ -4,14 +4,6 @@ Docker images for PaperMC distributions, built automatically from official Paper
 
 Lightweight and ready for Docker, Docker Compose, Docker Swarm, Kubernetes and any other OCI-compatible runtime.
 
-## 📦 Available Images
-
-| Image    | Registry                                                                                                                                                |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Folia    | [![Docker Pulls](https://img.shields.io/docker/pulls/schnellert/folia?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/schnellert/folia)       |
-| Paper    | [![Docker Pulls](https://img.shields.io/docker/pulls/schnellert/paper?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/schnellert/paper)       |
-| Velocity | [![Docker Pulls](https://img.shields.io/docker/pulls/schnellert/velocity?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/schnellert/velocity) |
-
 ## 📖 Documentation
 
 - [Folia](folia/README.md)
