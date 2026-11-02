@@ -22,6 +22,7 @@ Pin `<version>@sha256:<checksum>` for reproducible deployments; use `<version>` 
 | Variable            | Description                                                  | Default         |
 | ------------------- | ------------------------------------------------------------ | --------------- |
 | `ACCEPT_EULA`       | Minecraft EULA. The instance will not start until is `true`. | `false`         |
+| `LANG`              | Locale.                                                      | `en_US.UTF-8`   |
 | `JAVA_TOOL_OPTIONS` | JVM options.                                                 | `-Xms2G -Xmx2G` |
 
 Persistent data lives in `/data`. The container runs on a non-root user (**UID 1000**), so the mounted host directory must be writable by that user.

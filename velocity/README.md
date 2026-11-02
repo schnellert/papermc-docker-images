@@ -22,6 +22,7 @@ Pin `<version>@sha256:<checksum>` for reproducible deployments; use `<version>` 
 | Variable            | Description  | Default           |
 | ------------------- | ------------ | ----------------- |
 | `JAVA_TOOL_OPTIONS` | JVM options. | `-Xms512M -Xmx1G` |
+| `LANG`              | Locale.      | `en_US.UTF-8`     |
 
 Persistent data lives in `/data`. The container runs on a non-root user (**UID 1000**), so the mounted host directory must be writable by that user.
 
