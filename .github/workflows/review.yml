@@ -18,17 +18,32 @@ jobs:
       pull-requests: read
 
     outputs:
-      dockerfiles: ${{ steps.detect-changes.outputs.dockerfiles_files }}
+      files: ${{ steps.matrix.outputs.files }}
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
       - name: Detect Changes
         id: detect-changes
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
           filters: |
-            dockerfiles:
-              - added|modified: '{folia,paper,velocity}/Dockerfile*'
-          list-files: json
+            build:
+              - 'docker-entrypoint.sh'
+              - 'Dockerfile*'
+
+      - name: Build matrix
+        id: matrix
+        run: |
+          if [ "${{ steps.detect-changes.outputs.build }}" = "true" ]; then
+            files=$(printf '%s\n' Dockerfile* | jq -R . | jq -sc .)
+          else
+            files='[]'
+          fi
+          echo "files=$files" >> "$GITHUB_OUTPUT"
 
   build:
     name: Build Docker image
@@ -38,12 +53,12 @@ jobs:
       contents: read
 
     needs: changes
-    if: ${{ needs.changes.outputs.dockerfiles != '[]' }}
+    if: ${{ needs.changes.outputs.files != '[]' }}
 
     strategy:
       fail-fast: false
       matrix:
-        dockerfile: ${{ fromJSON(needs.changes.outputs.dockerfiles) }}
+        dockerfile: ${{ fromJSON(needs.changes.outputs.files) }}
 
     steps:
       - name: Checkout

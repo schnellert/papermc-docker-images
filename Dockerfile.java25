@@ -1,0 +1,36 @@
+FROM eclipse-temurin:25-jre-jammy@sha256:659b528cca74a0edc5c25315ec5819f35bce40bbcec645c4c534987e4c6be7c1
+
+# Prepares the directories
+RUN mkdir -p /app /data \
+  && chown 1000:1000 /app /data
+
+# Sets the working data directory
+WORKDIR /data
+
+ARG DOWNLOAD_URL=""
+ARG SHA256_CHECKSUM=""
+
+# Downloads the runtime JAR and verifies its checksum
+ADD --checksum=${SHA256_CHECKSUM} --chown=1000:1000 ${DOWNLOAD_URL} /app/runtime.jar
+
+COPY --chmod=755 docker-entrypoint.sh /docker-entrypoint.sh
+
+# Runs the runtime as an unprivileged user
+USER 1000:1000
+
+# Requires explicit EULA acceptance and sets the default JVM options
+ENV ACCEPT_EULA=false \
+  DOWNLOAD_URL={DOWNLOAD_URL} \
+  JAVA_TOOL_OPTIONS="-Xms2G -Xmx2G"
+
+# Stops the runtime gracefully so the data is saved before exit
+STOPSIGNAL SIGTERM
+
+# Exposes the default port
+EXPOSE 25565
+
+# Periodically checks whether the runtime is accepting connections
+HEALTHCHECK --interval=30s --start-period=60s --timeout=5s \
+  CMD bash -c 'echo > /dev/tcp/127.0.0.1/25565'
+
+ENTRYPOINT ["/docker-entrypoint.sh"]
