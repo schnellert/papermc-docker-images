@@ -52,7 +52,7 @@ jobs:
           persist-credentials: false
 
       - name: Build Docker image
-        uses: skriptfabrik/github-actions/build-docker-image@670d01963448cb3a99765db01e55cb1af70c22e0 # main
+        uses: skriptfabrik/github-actions/build-docker-image@fdeda65447e88363046dcfd93eacc1f140c47b59 # main
         with:
           file: ${{ matrix.dockerfile }}
           push: "false"
