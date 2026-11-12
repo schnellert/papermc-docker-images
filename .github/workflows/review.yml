@@ -10,7 +10,7 @@ on:
       - synchronize
 
 jobs:
-  changes:
+  detect-changes:
     name: Detect Changes
     runs-on: ubuntu-26.04
 
@@ -18,32 +18,8 @@ jobs:
       pull-requests: read
 
     outputs:
-      dockerfiles: ${{ steps.detect-changes.outputs.dockerfiles_files }}
-
-    steps:
-      - name: Detect Changes
-        id: detect-changes
-        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
-        with:
-          filters: |
-            dockerfiles:
-              - added|modified: '{folia,paper,velocity}/Dockerfile*'
-          list-files: json
-
-  build:
-    name: Build Docker image
-    runs-on: ubuntu-26.04
-
-    permissions:
-      contents: read
-
-    needs: changes
-    if: ${{ needs.changes.outputs.dockerfiles != '[]' }}
-
-    strategy:
-      fail-fast: false
-      matrix:
-        dockerfile: ${{ fromJSON(needs.changes.outputs.dockerfiles) }}
+      any: ${{ steps.matrix.outputs.any }}
+      matrix: ${{ steps.matrix.outputs.matrix }}
 
     steps:
       - name: Checkout
@@ -51,14 +27,125 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Build Docker image
+      - name: Detect Changes
+        id: detect-changes
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: |
+            dockerfiles:
+              - added|modified: 'docker/Dockerfile.java*'
+            entrypoint:
+              - added|modified: 'docker/docker-entrypoint.sh'
+          list-files: json
+
+      - name: Build Matrix
+        id: matrix
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          DOCKERFILES: ${{ steps.detect-changes.outputs.dockerfiles_files }}
+          ENTRYPOINT_CHANGED: ${{ steps.detect-changes.outputs.entrypoint }}
+        with:
+          script: |
+            // The Dockerfiles have no default server JAR, so every test build
+            // needs a real one. For each changed Dockerfile.java<N> this picks the
+            // newest stable release of every project that runs on Java <N>.
+            // A changed entrypoint affects every image, so every Dockerfile in
+            // docker/ is tested then.
+
+            const fs = require('node:fs');
+
+            const PROJECTS = ['folia', 'paper', 'velocity'];
+            const FILL_API = 'https://fill.papermc.io/v3/projects';
+
+            const fetchJson = async (url) => {
+              const response = await fetch(url, {
+                headers: { 'User-Agent': 'github.com/schnellert/papermc-docker-images' },
+              });
+
+              if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
+
+              return response.json();
+            };
+
+            const isStable = ({ channel }) => channel === 'STABLE' || channel === 'RECOMMENDED';
+
+            const dockerfiles = process.env.ENTRYPOINT_CHANGED === 'true'
+              ? fs.readdirSync('docker')
+              : JSON.parse(process.env.DOCKERFILES || '[]');
+            const javaVersions = dockerfiles
+              .map((file) => Number(file.match(/Dockerfile\.java(\d+)$/)?.[1]))
+              .filter(Boolean);
+
+            const matrix = [];
+
+            for (const project of PROJECTS) {
+              const { versions: groups } = await fetchJson(`${FILL_API}/${project}`);
+              const remaining = new Set(javaVersions);
+
+              // Versions are listed newest first, so the first stable match per
+              // Java version is the newest one.
+              for (const version of Object.values(groups).flat()) {
+                if (!remaining.size) break;
+
+                const { version: metadata } = await fetchJson(`${FILL_API}/${project}/versions/${version}`);
+                const java = metadata.java.version.minimum;
+                if (!remaining.has(java)) continue;
+
+                const builds = await fetchJson(`${FILL_API}/${project}/versions/${version}/builds`);
+                const asset = builds.find(isStable)?.downloads?.['server:default'];
+                if (!asset?.url || !asset?.checksums?.sha256) continue;
+
+                remaining.delete(java);
+                matrix.push({
+                  project,
+                  version,
+                  java,
+                  download: asset.url,
+                  sha256: `sha256:${asset.checksums.sha256}`,
+                });
+              }
+
+              for (const java of remaining) {
+                core.info(`${project}: no stable release on Java ${java}`);
+              }
+            }
+
+            core.notice(matrix.length ? `${matrix.length} test build(s)` : 'No Docker changes to test');
+            core.setOutput('matrix', JSON.stringify({ include: matrix }));
+            core.setOutput('any', String(matrix.length > 0));
+
+  build-docker-image:
+    name: Build Docker Image (${{ matrix.project }} ${{ matrix.version }}, Java ${{ matrix.java }})
+    runs-on: ubuntu-26.04
+
+    permissions:
+      contents: read
+
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.any == 'true' }}
+
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.detect-changes.outputs.matrix) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build Docker Image
         uses: skriptfabrik/github-actions/build-docker-image@dc3b685899bc721ed19eded1aef50832d8a5b30d # main
         with:
-          file: ${{ matrix.dockerfile }}
+          build-args: |
+            DOWNLOAD_URL=${{ matrix.download }}
+            SHA256_CHECKSUM=${{ matrix.sha256 }}
+          context: docker
+          file: Dockerfile.java${{ matrix.java }}
           push: "false"
 
   lint:
-    name: Lint files
+    name: Lint
     runs-on: ubuntu-latest
 
     permissions:
@@ -75,5 +162,5 @@ jobs:
         with:
           cache: true
 
-      - name: Lint files
+      - name: Lint
         run: pnpm exec prettier --check --ignore-unknown .

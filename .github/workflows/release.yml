@@ -1,0 +1,254 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "docker/Dockerfile*"
+      - "docker/docker-entrypoint.sh"
+
+  schedule:
+    - cron: "0 0 * * FRI"
+
+  workflow_dispatch:
+    inputs:
+      project:
+        description: PaperMC project to release
+        default: all
+        type: choice
+        options:
+          - all
+          - folia
+          - paper
+          - velocity
+
+concurrency:
+  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}
+
+permissions:
+  contents: read
+
+jobs:
+  detect-changes:
+    name: Detect Changes
+    runs-on: ubuntu-26.04
+
+    outputs:
+      any: ${{ steps.detect-changes.outputs.any }}
+      matrix: ${{ steps.detect-changes.outputs.matrix }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Authenticate with Docker Hub
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          username: schnellert
+          password: ${{ secrets.DOCKER_HUB_PAT }}
+
+      - name: Detect Changes
+        id: detect-changes
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          PROJECT: ${{ inputs.project || 'all' }}
+        with:
+          script: |
+            // Every published image carries two labels:
+            //   BUILD_ID  the upstream PaperMC build contained in the image
+            //   HASH      hash of the docker/ files the image was built from
+            //
+            // An image is rebuilt when its labels differ from the expected ones:
+            //   - schedule: a new upstream build changes BUILD_ID
+            //   - Renovate: a new base image digest changes Dockerfile.java<N>
+            //     and thus HASH for exactly the images that use Java <N>
+            //   - entrypoint changes alter HASH for every image
+
+            const crypto = require('node:crypto');
+            const fs = require('node:fs');
+
+            const PROJECTS = ['folia', 'paper', 'velocity'];
+            const PLATFORMS = ['linux/amd64', 'linux/arm64'];
+            const REGISTRY = 'docker.io/schnellert';
+            const FILL_API = 'https://fill.papermc.io/v3/projects';
+            const ENTRYPOINT = 'docker/docker-entrypoint.sh';
+
+            const fetchJson = async (url) => {
+              const response = await fetch(url, {
+                headers: { 'User-Agent': 'github.com/schnellert/papermc-docker-images' },
+              });
+
+              if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
+
+              return response.json();
+            };
+
+            const isStable = ({ channel }) => channel === 'STABLE' || channel === 'RECOMMENDED';
+
+            // Versions are grouped upstream (e.g. "1.21" -> ["1.21.11", "1.21.10", ...]),
+            // newest first. Every version with a stable build is published with its
+            // newest stable build. A group without any stable build publishes the
+            // newest build of its newest version instead, so it is available early.
+            const listReleases = async (project) => {
+              const { versions: groups } = await fetchJson(`${FILL_API}/${project}`);
+              const releases = [];
+
+              for (const versions of Object.values(groups)) {
+                const stable = [];
+                let newest;
+
+                for (const version of versions) {
+                  const builds = await fetchJson(`${FILL_API}/${project}/versions/${version}/builds`);
+
+                  newest ??= builds[0] && { version, build: builds[0] };
+
+                  const build = builds.find(isStable);
+                  if (build) stable.push({ version, build });
+                }
+
+                releases.push(...(stable.length ? stable : newest ? [newest] : []));
+              }
+
+              return releases;
+            };
+
+            const getJavaVersion = async (project, version) => {
+              const { version: metadata } = await fetchJson(`${FILL_API}/${project}/versions/${version}`);
+              return metadata.java.version.minimum;
+            };
+
+            const hashFiles = (files) => {
+              const hash = crypto.createHash('sha256');
+              for (const file of files) hash.update(fs.readFileSync(file));
+              return hash.digest('hex');
+            };
+
+            // Returns the labels of every platform of a published image, keyed by
+            // platform, or null if the image does not exist.
+            const readImageLabels = async (reference) => {
+              const result = await exec.getExecOutput(
+                'docker',
+                ['buildx', 'imagetools', 'inspect', reference, '--format', '{{json .Image}}'],
+                { ignoreReturnCode: true, silent: true },
+              );
+
+              if (result.exitCode !== 0) {
+                if (/manifest unknown|name unknown|not found/i.test(result.stderr)) return null;
+                throw new Error(`Cannot inspect ${reference}: ${result.stderr}`);
+              }
+
+              const images = JSON.parse(result.stdout);
+              return Object.fromEntries(
+                PLATFORMS.map((platform) => [platform, images[platform]?.config?.Labels ?? {}]),
+              );
+            };
+
+            // Returns why an image needs to be rebuilt, or null if it is up to date.
+            const getOutdatedReason = async (reference, expected) => {
+              const labelsByPlatform = await readImageLabels(reference);
+              if (!labelsByPlatform) return 'image does not exist';
+
+              for (const [platform, labels] of Object.entries(labelsByPlatform)) {
+                if (labels.BUILD_ID !== expected.BUILD_ID) {
+                  return `${platform}: new upstream build (${labels.BUILD_ID ?? 'none'} -> ${expected.BUILD_ID})`;
+                }
+                if (labels.HASH !== expected.HASH) {
+                  return `${platform}: Dockerfile or entrypoint changed`;
+                }
+              }
+
+              return null;
+            };
+
+            const projects = process.env.PROJECT === 'all' ? PROJECTS : [process.env.PROJECT];
+            const matrix = [];
+
+            for (const project of projects) {
+              for (const { version, build } of await listReleases(project)) {
+                const java = await getJavaVersion(project, version);
+                const dockerfile = `docker/Dockerfile.java${java}`;
+
+                if (!fs.existsSync(dockerfile)) {
+                  core.warning(`${project} ${version}: skipped, ${dockerfile} missing`);
+                  continue;
+                }
+
+                const buildId = String(build.id);
+                const hash = hashFiles([dockerfile, ENTRYPOINT]);
+                const reason = await getOutdatedReason(`${REGISTRY}/${project}:${version}`, {
+                  BUILD_ID: buildId,
+                  HASH: hash,
+                });
+
+                if (!reason) {
+                  core.info(`${project} ${version}: up to date`);
+                  continue;
+                }
+
+                core.info(`${project} ${version}: rebuild, ${reason}`);
+
+                const asset = build.downloads?.['server:default'];
+                if (!asset?.url || !asset?.checksums?.sha256) {
+                  throw new Error(`${project} ${version}: build ${buildId} has no download URL or SHA256`);
+                }
+
+                matrix.push({
+                  project,
+                  version,
+                  java,
+                  buildId,
+                  hash,
+                  download: asset.url,
+                  sha256: `sha256:${asset.checksums.sha256}`,
+                });
+              }
+            }
+
+            if (matrix.length > 256) {
+              throw new Error(`Build matrix has ${matrix.length} entries, GitHub allows 256`);
+            }
+
+            core.notice(matrix.length ? `${matrix.length} image(s) need building` : 'All images are up to date');
+            core.setOutput('matrix', JSON.stringify({ include: matrix }));
+            core.setOutput('any', String(matrix.length > 0));
+
+  build:
+    name: Build Docker image (${{ matrix.project }} ${{ matrix.version }})
+    runs-on: ubuntu-26.04
+
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.any == 'true' }}
+
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix: ${{ fromJSON(needs.detect-changes.outputs.matrix) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build Docker image
+        uses: skriptfabrik/github-actions/build-docker-image@dc3b685899bc721ed19eded1aef50832d8a5b30d # main
+        with:
+          build-args: |
+            DOWNLOAD_URL=${{ matrix.download }}
+            SHA256_CHECKSUM=${{ matrix.sha256 }}
+          context: docker
+          file: Dockerfile.java${{ matrix.java }}
+          labels: |
+            BUILD_ID=${{ matrix.buildId }}
+            HASH=${{ matrix.hash }}
+          registry: docker.io
+          registry-username: schnellert
+          registry-password: ${{ secrets.DOCKER_HUB_PAT }}
+          repository: schnellert
+          name: ${{ matrix.project }}
+          tags: |
+            type=raw,value=${{ matrix.version }}
