@@ -1,6 +1,12 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "enabledManagers": ["devcontainer", "dockerfile", "github-actions", "mise", "npm"],
+  "enabledManagers": [
+    "devcontainer",
+    "dockerfile",
+    "github-actions",
+    "mise",
+    "npm"
+  ],
   "extends": ["config:recommended"],
   "packageRules": [
     {
