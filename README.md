@@ -14,14 +14,29 @@ Lightweight and ready for Docker, Docker Compose, Docker Swarm, Kubernetes and a
 | [Paper](https://papermc.io/software/paper)       | [`schnellert/paper`](https://hub.docker.com/r/schnellert/paper)       | [![Docker Pulls](https://img.shields.io/docker/pulls/schnellert/paper?label=pulls&logo=docker)](https://hub.docker.com/r/schnellert/paper)       |
 | [Velocity](https://papermc.io/software/velocity) | [`schnellert/velocity`](https://hub.docker.com/r/schnellert/velocity) | [![Docker Pulls](https://img.shields.io/docker/pulls/schnellert/velocity?label=pulls&logo=docker)](https://hub.docker.com/r/schnellert/velocity) |
 
-All images are available for `linux/amd64` and `linux/arm64`.
+All images are available for `linux/amd64` and `linux/arm64`. Each image is based on the [Eclipse Temurin](https://hub.docker.com/_/eclipse-temurin) JRE (Ubuntu Jammy) with the minimum Java version its release requires: 8, 17, 21 or 25.
 
 ## 🏷️ Tags
 
-- `<version>` - latest build for that version, e.g. `paper:1.21.11` or `velocity:4.1.0-SNAPSHOT`
+- `<version>` - newest stable build for that version, e.g. `paper:1.21.11` or `velocity:4.1.0-SNAPSHOT`
 - `<version>@sha256:<digest>` - a specific, immutable build
 
+Every version with a stable build is published. If a version line has no stable build yet (e.g. a new Minecraft release), its newest version is published with its newest experimental build, so it is available early.
+
 Pin `<version>@sha256:<digest>` for reproducible deployments; use `<version>` to follow the newest build in that version.
+
+> [!NOTE]
+> Releases that require Java 6, 11 or 16 (e.g. Paper 1.7.10 and 1.17.x, Velocity 3.1.x and 3.2.0) are currently not published.
+
+## 🔄 Updates
+
+The `<version>` tags are rebuilt automatically when:
+
+- PaperMC publishes a new build for that version (checked weekly),
+- the Java base image receives an update, e.g. a security patch,
+- the image definition in this repository changes.
+
+Only the affected images are rebuilt, e.g. a Java 8 base image update rebuilds only the images that run on Java 8. A rebuild pushes a new digest under the same tag.
 
 ## ⚙️ Configuration
 
@@ -32,6 +47,8 @@ Pin `<version>@sha256:<digest>` for reproducible deployments; use `<version>` to
 | `LANG`              | Locale.                                                                        | `en_US.UTF-8` |
 
 `ACCEPT_EULA` has no effect on Velocity.
+
+The container reports as healthy once the server accepts connections on port `25565`. On stop, the server receives `SIGTERM` and shuts down gracefully. Saving the worlds can take longer than Docker's default 10 seconds, so allow more time, e.g. `docker stop -t 60 paper-1` or `stop_grace_period: 1m` in Docker Compose.
 
 Persistent data lives in `/data`. The container runs as a non-root user (**UID 1000**), so the mounted host directory must be writable by that user:
 
@@ -87,9 +104,10 @@ services:
       - 25565:25565
     stdin_open: true
     tty: true
+    stop_grace_period: 1m
 ```
 
-`stdin_open: true` and `tty: true` correspond to Docker's `-i` and `-t` options.
+`stdin_open: true` and `tty: true` correspond to Docker's `-i` and `-t` options. `stop_grace_period` gives the server time to save before it is killed.
 
 | Action                                | Command                          |
 | ------------------------------------- | -------------------------------- |
