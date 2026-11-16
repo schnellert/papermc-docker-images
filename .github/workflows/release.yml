@@ -234,7 +234,7 @@ jobs:
           persist-credentials: false
 
       - name: Build Docker Image
-        uses: skriptfabrik/github-actions/build-docker-image@dc3b685899bc721ed19eded1aef50832d8a5b30d # main
+        uses: skriptfabrik/github-actions/build-docker-image@d89b05af14497aeb858c318f8814493df0880017 # main
         with:
           build-args: |
             DOWNLOAD_URL=${{ matrix.download }}
