@@ -43,6 +43,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Authenticate with Docker Hub
@@ -58,21 +59,10 @@ jobs:
           PROJECT: ${{ inputs.project || 'all' }}
         with:
           script: |
-            // Every published image carries two labels:
-            //   BUILD_ID  the upstream PaperMC build contained in the image
-            //   HASH      hash of the docker/ files the image was built from
-            //
-            // An image is rebuilt when its labels differ from the expected ones:
-            //   - schedule: a new upstream build changes BUILD_ID
-            //   - Renovate: a new base image digest changes Dockerfile.java<N>
-            //     and thus HASH for exactly the images that use Java <N>
-            //   - entrypoint changes alter HASH for every image
-
-            const crypto = require('node:crypto');
             const fs = require('node:fs');
+            const os = require('node:os');
 
             const PROJECTS = ['folia', 'paper', 'velocity'];
-            const PLATFORMS = ['linux/amd64', 'linux/arm64'];
             const REGISTRY = 'docker.io/schnellert';
             const FILL_API = 'https://fill.papermc.io/v3/projects';
 
@@ -86,6 +76,22 @@ jobs:
               return response.json();
             };
 
+            // Maps items with at most CONCURRENCY calls in flight, keeping the order.
+            const mapConcurrent = async (items, fn) => {
+              const results = new Array(items.length);
+              let next = 0;
+
+              const worker = async () => {
+                while (next < items.length) {
+                  const index = next++;
+                  results[index] = await fn(items[index]);
+                }
+              };
+
+              await Promise.all(Array.from({ length: Math.min(os.availableParallelism(), items.length) }, worker));
+              return results;
+            };
+
             const isStable = ({ channel }) => channel === 'STABLE' || channel === 'RECOMMENDED';
 
             // Versions are grouped upstream (e.g. "1.21" -> ["1.21.11", "1.21.10", ...]),
@@ -93,42 +99,63 @@ jobs:
             // newest stable build. A group without any stable build publishes the
             // newest build of its newest version instead, so it is available early.
             const listReleases = async (project) => {
-              const { versions: groups } = await fetchJson(`${FILL_API}/${project}`);
-              const releases = [];
+              const [{ versions: groups }, { versions: metadata }] = await Promise.all([
+                fetchJson(`${FILL_API}/${project}`),
+                fetchJson(`${FILL_API}/${project}/versions`),
+              ]);
 
-              for (const versions of Object.values(groups)) {
-                const stable = [];
-                let newest;
+              const javaByVersion = Object.fromEntries(
+                metadata.map(({ version }) => [version.id, version.java.version.minimum]),
+              );
 
-                for (const version of versions) {
-                  const builds = await fetchJson(`${FILL_API}/${project}/versions/${version}/builds`);
+              const versions = Object.values(groups).flat();
+              const buildLists = await mapConcurrent(versions, (version) =>
+                fetchJson(`${FILL_API}/${project}/versions/${version}/builds`),
+              );
+              const buildsByVersion = new Map(versions.map((version, i) => [version, buildLists[i]]));
 
-                  newest ??= builds[0] && { version, build: builds[0] };
+              return Object.values(groups).flatMap((group) => {
+                const withBuilds = group.map((version) => ({ version, builds: buildsByVersion.get(version) }));
 
-                  const build = builds.find(isStable);
-                  if (build) stable.push({ version, build });
-                }
+                const stable = withBuilds
+                  .map(({ version, builds }) => ({ version, build: builds.find(isStable) }))
+                  .filter(({ build }) => build);
 
-                releases.push(...(stable.length ? stable : newest ? [newest] : []));
-              }
+                const newest = withBuilds.find(({ builds }) => builds.length);
+                const releases = stable.length
+                  ? stable
+                  : newest
+                    ? [{ version: newest.version, build: newest.builds[0] }]
+                    : [];
 
-              return releases;
+                return releases.map((release) => ({
+                  project,
+                  ...release,
+                  java: javaByVersion[release.version],
+                }));
+              });
             };
 
-            const getJavaVersion = async (project, version) => {
-              const { version: metadata } = await fetchJson(`${FILL_API}/${project}/versions/${version}`);
-              return metadata.java.version.minimum;
+            // Returns whether the files differ between the given commit and HEAD,
+            // or null if the commit is unknown (e.g. history was rewritten).
+            const filesChangedSince = async (revision, files) => {
+              if (!/^[0-9a-f]{40}$/.test(revision ?? '')) return null;
+
+              const { exitCode } = await exec.getExecOutput(
+                'git',
+                ['diff', '--quiet', revision, 'HEAD', '--', ...files],
+                { ignoreReturnCode: true, silent: true },
+              );
+
+              return exitCode === 0 ? false : exitCode === 1 ? true : null;
             };
 
-            const hashFiles = (files) => {
-              const hash = crypto.createHash('sha256');
-              for (const file of files) hash.update(fs.readFileSync(file));
-              return hash.digest('hex');
-            };
+            const getEnv = (config, name) =>
+              config?.Env?.find((entry) => entry.startsWith(`${name}=`))?.slice(name.length + 1);
 
-            // Returns the labels of every platform of a published image, keyed by
+            // Returns the config of every platform of a published image, keyed by
             // platform, or null if the image does not exist.
-            const readImageLabels = async (reference) => {
+            const readImageConfigs = async (reference) => {
               const result = await exec.getExecOutput(
                 'docker',
                 ['buildx', 'imagetools', 'inspect', reference, '--format', '{{json .Image}}'],
@@ -140,78 +167,159 @@ jobs:
                 throw new Error(`Cannot inspect ${reference}: ${result.stderr}`);
               }
 
+              // Multi-platform images are keyed by platform, single-platform ones are not
               const images = JSON.parse(result.stdout);
+              const byPlatform = images.config ? { [`${images.os}/${images.architecture}`]: images } : images;
+
               return Object.fromEntries(
-                PLATFORMS.map((platform) => [platform, images[platform]?.config?.Labels ?? {}]),
+                Object.entries(byPlatform).map(([platform, image]) => [platform, image?.config ?? {}]),
               );
             };
 
-            // Returns why an image needs to be rebuilt, or null if it is up to date.
-            const getOutdatedReason = async (reference, expected) => {
-              const labelsByPlatform = await readImageLabels(reference);
-              if (!labelsByPlatform) return 'image does not exist';
+            const REASONS = {
+              missing: 'new image',
+              upstream: 'new upstream build',
+              files: 'Dockerfile or entrypoint changed',
+              revision: 'unknown source revision',
+            };
 
-              for (const [platform, labels] of Object.entries(labelsByPlatform)) {
-                if (labels.BUILD_ID !== expected.BUILD_ID) {
-                  return `${platform}: new upstream build (${labels.BUILD_ID ?? 'none'} -> ${expected.BUILD_ID})`;
+            const jarName = (url) => url?.split('/').pop() ?? 'none';
+
+            // Returns why an image needs to be rebuilt as { kind, detail }, or null if
+            // it is up to date. kind is a key of REASONS.
+            const getOutdatedReason = async (reference, { downloadUrl, files }) => {
+              const configsByPlatform = await readImageConfigs(reference);
+              if (!configsByPlatform) return { kind: 'missing', detail: 'not published yet' };
+
+              for (const config of Object.values(configsByPlatform)) {
+                const imageUrl = getEnv(config, 'DOWNLOAD_URL');
+                if (imageUrl !== downloadUrl) {
+                  return { kind: 'upstream', detail: `${jarName(imageUrl)} → ${jarName(downloadUrl)}` };
                 }
-                if (labels.HASH !== expected.HASH) {
-                  return `${platform}: Dockerfile or entrypoint changed`;
-                }
+
+                const revision = config.Labels?.['org.opencontainers.image.revision'];
+                const changed = await filesChangedSince(revision, files);
+                if (changed === null) return { kind: 'revision', detail: `${revision?.slice(0, 7) ?? 'none'} not in history` };
+                if (changed) return { kind: 'files', detail: `since ${revision.slice(0, 7)}` };
               }
 
               return null;
             };
 
             const projects = process.env.PROJECT === 'all' ? PROJECTS : [process.env.PROJECT];
-            const matrix = [];
+            const releases = [];
+            for (const project of projects) releases.push(...(await listReleases(project)));
+
+            const results = await mapConcurrent(releases, async ({ project, version, build, java }) => {
+              const dockerfile = `docker/Dockerfile.java${java}`;
+
+              if (!fs.existsSync(dockerfile)) {
+                return { project, version, java, skipped: dockerfile };
+              }
+
+              const asset = build.downloads?.['server:default'];
+              if (!asset?.url || !asset?.checksums?.sha256) {
+                throw new Error(`${project} ${version}: build ${build.id} has no download URL or SHA256`);
+              }
+
+              const reason = await getOutdatedReason(`${REGISTRY}/${project}:${version}`, {
+                downloadUrl: asset.url,
+                files: [dockerfile, 'docker/docker-entrypoint.sh'],
+              });
+
+              return {
+                project,
+                version,
+                java,
+                reason,
+                entry: { project, version, java, download: asset.url, sha256: `sha256:${asset.checksums.sha256}` },
+              };
+            });
+
+            const rebuilds = results.filter(({ reason }) => reason);
+            const upToDate = results.filter(({ reason, skipped }) => !reason && !skipped);
+            const skipped = results.filter(({ skipped }) => skipped);
+            const matrix = rebuilds.map(({ entry }) => entry);
+
+            // Log: one collapsible group per project, one aligned line per image
+            const width = Math.max(...results.map(({ version }) => version.length));
 
             for (const project of projects) {
-              for (const { version, build } of await listReleases(project)) {
-                const java = await getJavaVersion(project, version);
-                const dockerfile = `docker/Dockerfile.java${java}`;
+              const own = results.filter((result) => result.project === project);
+              const toBuild = own.filter(({ reason }) => reason).length;
+              const ownSkipped = own.filter(({ skipped }) => skipped).length;
+              const unchanged = own.length - toBuild - ownSkipped;
 
-                if (!fs.existsSync(dockerfile)) {
-                  core.warning(`${project} ${version}: skipped, ${dockerfile} missing`);
-                  continue;
-                }
-
-                const buildId = String(build.id);
-                const hash = hashFiles([dockerfile, 'docker/docker-entrypoint.sh']);
-                const reason = await getOutdatedReason(`${REGISTRY}/${project}:${version}`, {
-                  BUILD_ID: buildId,
-                  HASH: hash,
-                });
-
-                if (!reason) {
-                  core.info(`${project} ${version}: up to date`);
-                  continue;
-                }
-
-                core.info(`${project} ${version}: rebuild, ${reason}`);
-
-                const asset = build.downloads?.['server:default'];
-                if (!asset?.url || !asset?.checksums?.sha256) {
-                  throw new Error(`${project} ${version}: build ${buildId} has no download URL or SHA256`);
-                }
-
-                matrix.push({
-                  project,
-                  version,
-                  java,
-                  buildId,
-                  hash,
-                  download: asset.url,
-                  sha256: `sha256:${asset.checksums.sha256}`,
-                });
+              core.startGroup(
+                `${project}: ${toBuild} to build, ${unchanged} up to date` +
+                  (ownSkipped ? `, ${ownSkipped} skipped` : ''),
+              );
+              for (const { version, java, reason, skipped } of own) {
+                const status = skipped
+                  ? `– skipped       ${skipped} missing`
+                  : reason
+                    ? `↻ rebuild       ${REASONS[reason.kind]} (${reason.detail})`
+                    : '✓ up to date';
+                core.info(`${version.padEnd(width)}  java ${String(java).padStart(2)}  ${status}`);
               }
+              core.endGroup();
+            }
+
+            // One warning per missing Dockerfile instead of one per image
+            const skippedByDockerfile = Map.groupBy(skipped, ({ skipped }) => skipped);
+            for (const [dockerfile, images] of skippedByDockerfile) {
+              const list = images.map(({ project, version }) => `${project} ${version}`).join(', ');
+              core.warning(`${dockerfile} missing, skipped ${images.length} image(s): ${list}`);
             }
 
             if (matrix.length > 256) {
               throw new Error(`Build matrix has ${matrix.length} entries, GitHub allows 256`);
             }
 
-            core.notice(matrix.length ? `${matrix.length} image(s) need building` : 'All images are up to date');
+            const countsByKind = Object.entries(Object.groupBy(rebuilds, ({ reason }) => reason.kind))
+              .map(([kind, images]) => `${images.length}× ${REASONS[kind]}`)
+              .join(', ');
+
+            core.notice(
+              matrix.length
+                ? `${matrix.length} image(s) to build (${countsByKind}), ${upToDate.length} up to date, ${skipped.length} skipped`
+                : `All ${upToDate.length} images are up to date, ${skipped.length} skipped`,
+            );
+
+            // Job summary: what gets built and why
+            core.summary.addHeading('Change Detection', 2).addRaw(
+              `${matrix.length} to build · ${upToDate.length} up to date · ${skipped.length} skipped`,
+              true,
+            );
+
+            if (rebuilds.length) {
+              core.summary.addTable([
+                [
+                  { data: 'Image', header: true },
+                  { data: 'Java', header: true },
+                  { data: 'Reason', header: true },
+                  { data: 'Detail', header: true },
+                ],
+                ...rebuilds.map(({ project, version, java, reason }) => [
+                  `${project}:${version}`,
+                  String(java),
+                  REASONS[reason.kind],
+                  reason.detail,
+                ]),
+              ]);
+            }
+
+            if (skipped.length) {
+              core.summary.addHeading('Skipped', 3).addList(
+                [...skippedByDockerfile].map(
+                  ([dockerfile, images]) =>
+                    `${dockerfile} missing: ${images.map(({ project, version }) => `${project} ${version}`).join(', ')}`,
+                ),
+              );
+            }
+
+            await core.summary.write();
+
             core.setOutput('matrix', JSON.stringify({ include: matrix }));
             core.setOutput('any', String(matrix.length > 0));
 
@@ -241,9 +349,6 @@ jobs:
             SHA256_CHECKSUM=${{ matrix.sha256 }}
           context: docker
           file: Dockerfile.java${{ matrix.java }}
-          labels: |
-            BUILD_ID=${{ matrix.buildId }}
-            HASH=${{ matrix.hash }}
           registry: docker.io
           registry-username: schnellert
           registry-password: ${{ secrets.DOCKER_HUB_PAT }}
